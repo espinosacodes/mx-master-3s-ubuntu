@@ -15,7 +15,8 @@ You can get the same behavior back with about two minutes of setup. Here's how I
 | **Tap** it, or hold and move up/down | Activities overview, the GNOME version of Mission Control |
 
 It also turns on SmartShift (the scroll wheel switches to free spin when you flick it)
-and hi-res scrolling, and sets 1500 DPI.
+and sets 1500 DPI. Hi-res scrolling is left off on purpose, because on GNOME it makes
+many apps scroll way too far per notch.
 
 Tested on Ubuntu 26.04 (GNOME, Wayland) with an MX Master 3S on a Logi Bolt receiver.
 It should work the same over Bluetooth, and on any Ubuntu release that has the
@@ -111,6 +112,9 @@ Look for the `Device found:` line. The name in `logid.cfg` has to match it exact
 
 **It says `MX Master 3S B`:** that's the business edition. Re-run the installer with
 `./install.sh --business`, or change the `name:` line by hand.
+
+**Scrolling is too fast:** make sure the config has `hires: false` under `hiresscroll`,
+then restart logid and power-cycle the mouse.
 
 **The mouse is paired to several computers (Easy-Switch):** logid only configures it
 on the channel it's connected to. Pick this computer's channel, then power-cycle.
