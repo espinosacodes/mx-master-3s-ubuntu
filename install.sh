@@ -2,7 +2,7 @@
 # Installs logiops and maps the MX Master 3S thumb button to workspace switching on GNOME.
 set -euo pipefail
 
-CFG_URL="https://raw.githubusercontent.com/espinosacodes/mx-master-3s-ubuntu/main/logid.cfg"
+RAW_URL="https://raw.githubusercontent.com/espinosacodes/mx-master-3s-ubuntu/main"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
 
 echo "==> Installing logiops"
@@ -14,7 +14,7 @@ if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/logid.cfg" ]]; then
     cp "$SCRIPT_DIR/logid.cfg" "$TMP_CFG"
 else
     echo "==> Downloading config"
-    curl -fsSL "$CFG_URL" -o "$TMP_CFG"
+    curl -fsSL "$RAW_URL/logid.cfg" -o "$TMP_CFG"
 fi
 
 # Business edition mice report a different name, so match it if logid sees it.
@@ -35,6 +35,23 @@ rm -f "$TMP_CFG"
 echo "==> Enabling the logid service"
 sudo systemctl enable logid >/dev/null 2>&1 || true
 sudo systemctl restart logid
+
+# logid can lose track of the mouse after it sleeps (for example when an MX Keys on the
+# same receiver connects). The watchdog notices and restarts logid.
+echo "==> Installing the logid watchdog"
+WD_TMP="$(mktemp -d)"
+for f in logid-watchdog logid-watchdog.service logid-watchdog.timer; do
+    if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/watchdog/$f" ]]; then
+        cp "$SCRIPT_DIR/watchdog/$f" "$WD_TMP/$f"
+    else
+        curl -fsSL "$RAW_URL/watchdog/$f" -o "$WD_TMP/$f"
+    fi
+done
+sudo install -m 755 "$WD_TMP/logid-watchdog" /usr/local/bin/logid-watchdog
+sudo install -m 644 "$WD_TMP/logid-watchdog.service" "$WD_TMP/logid-watchdog.timer" /etc/systemd/system/
+rm -rf "$WD_TMP"
+sudo systemctl daemon-reload
+sudo systemctl enable --now logid-watchdog.timer >/dev/null 2>&1
 
 cat <<'MSG'
 

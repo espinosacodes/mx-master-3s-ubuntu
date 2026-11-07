@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Restart logid when a Logitech device is awake but logid lost track of it.
+
+logiops 0.3.x sometimes misses a device waking up (for example when a second
+device on the same receiver connects). The mouse then falls back to its default
+button behavior until logid is restarted. This script runs from a systemd timer:
+for every receiver slot logid has configured before, it pings the device over
+HID++. If the device answers but logid does not consider it awake on two runs
+in a row, logid gets restarted.
+"""
+import os
+import re
+import select
+import subprocess
+import sys
+import time
+
+STATE_FILE = "/run/logid-watchdog.state"
+STARTUP_GRACE_SECONDS = 30
+
+
+def journal_lines(since="-30d"):
+    out = subprocess.run(
+        ["journalctl", "-u", "logid", "--since", since, "-o", "cat", "--no-pager"],
+        capture_output=True, text=True,
+    ).stdout
+    return out.splitlines()
+
+
+def logid_started_seconds_ago():
+    out = subprocess.run(
+        ["systemctl", "show", "logid", "-p", "ActiveEnterTimestampMonotonic", "--value"],
+        capture_output=True, text=True,
+    ).stdout.strip()
+    if not out or out == "0":
+        return None
+    return time.monotonic() - int(out) / 1_000_000
+
+
+def ping(hidraw, slot):
+    """Return True if the device in this receiver slot answers a HID++ 2.0 ping."""
+    try:
+        fd = os.open(hidraw, os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        os.write(fd, bytes([0x10, slot, 0x00, 0x1A, 0, 0, 0x5A]))
+        deadline = time.time() + 1.5
+        while time.time() < deadline:
+            ready, _, _ = select.select([fd], [], [], 0.2)
+            if not ready:
+                continue
+            data = os.read(fd, 64)
+            if len(data) >= 7 and data[1] == slot and data[2] == 0x00 and data[3] == 0x1A:
+                return data[0] == 0x11
+            if len(data) >= 4 and data[0] == 0x10 and data[1] == slot and data[2] == 0x8F:
+                return False
+        return False
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def main():
+    if subprocess.run(["systemctl", "is-active", "--quiet", "logid"]).returncode != 0:
+        return 0
+    age = logid_started_seconds_ago()
+    if age is not None and age < STARTUP_GRACE_SECONDS:
+        return 0
+
+    lines = journal_lines()
+    known_slots = {int(m.group(1)) for line in lines
+                   if (m := re.search(r"Device found: .* on /dev/hidraw\d+:(\d+)", line))}
+
+    # Only look at what the running logid instance has logged.
+    last_start = max((i for i, l in enumerate(lines) if l.startswith("Started logid")), default=-1)
+    current = lines[last_start + 1:]
+
+    receivers = {m.group(1) for line in current
+                 if (m := re.search(r"Detected receiver at (/dev/hidraw\d+)", line))}
+
+    awake = {}
+    for line in current:
+        m = re.search(r"(/dev/hidraw\d+):(\d+)", line)
+        if not m:
+            continue
+        key = (m.group(1), int(m.group(2)))
+        if "Device found" in line or "woke up" in line:
+            awake[key] = True
+        elif "fell asleep" in line:
+            awake[key] = False
+
+    lost = [(r, s) for r in receivers for s in known_slots
+            if not awake.get((r, s)) and ping(r, s)]
+
+    previously_lost = os.path.exists(STATE_FILE)
+    if not lost:
+        if previously_lost:
+            os.remove(STATE_FILE)
+        return 0
+    if not previously_lost:
+        open(STATE_FILE, "w").close()
+        return 0
+
+    os.remove(STATE_FILE)
+    print(f"logid lost track of {lost}, restarting logid", file=sys.stderr)
+    subprocess.run(["systemctl", "restart", "logid"])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -95,8 +95,32 @@ catches it, and you get:
 ```
 
 After that it works, including after reboots, since logid starts before the mouse
-connects. If the thumb button ever stops working (for example after you restart the
-service), just power-cycle the mouse again.
+connects. If the thumb button ever stops working, the watchdog below usually brings it
+back on its own. If it doesn't, power-cycle the mouse.
+
+## The second gotcha: it stops working when the keyboard connects
+
+If you also have an MX Keys (or any other Logitech device) on the same Bolt receiver,
+the thumb button can suddenly stop working. In my case the log showed the mouse going
+to sleep and never coming back:
+
+```
+[INFO] /dev/hidraw2:4 fell asleep.
+```
+
+The mouse was awake and answering on the receiver, but logiops 0.3.x missed the wake-up
+event, so it never re-applied the config. Restarting logid fixed it every time.
+
+So the installer also adds a tiny watchdog
+([`watchdog/logid-watchdog`](watchdog/logid-watchdog)), run by a systemd timer every
+20 seconds. It pings each device logid has configured before. If a device answers but
+logid hasn't noticed it's awake on two checks in a row, the watchdog restarts logid.
+Worst case, the button comes back on its own within about 40 seconds.
+
+```bash
+systemctl list-timers logid-watchdog.timer    # is it running?
+journalctl -u logid-watchdog                  # has it had to restart logid?
+```
 
 ## Troubleshooting
 
@@ -122,7 +146,9 @@ on the channel it's connected to. Pick this computer's channel, then power-cycle
 **Undo everything:**
 
 ```bash
-sudo systemctl disable --now logid
+sudo systemctl disable --now logid-watchdog.timer logid
+sudo rm /etc/systemd/system/logid-watchdog.{service,timer} /usr/local/bin/logid-watchdog
+sudo systemctl daemon-reload
 sudo apt remove logiops
 sudo rm /etc/logid.cfg
 ```

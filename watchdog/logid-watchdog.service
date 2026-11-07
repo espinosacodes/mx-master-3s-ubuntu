@@ -1,0 +1,7 @@
+[Unit]
+Description=Restart logid if it lost track of a Logitech device
+After=logid.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/logid-watchdog
