@@ -122,6 +122,37 @@ systemctl list-timers logid-watchdog.timer    # is it running?
 journalctl -u logid-watchdog                  # has it had to restart logid?
 ```
 
+## Bonus: MX Keys S screenshot and lock keys
+
+If you also have an MX Keys S, its screenshot and lock keys do nothing on Ubuntu out of
+the box. That's because they don't send a "screenshot" or "lock" key. They send the
+shortcut for whatever OS mode the keyboard is in:
+
+| Key | Mac mode (`Fn+O`) | Windows mode (`Fn+P`) |
+|---|---|---|
+| Screenshot | `Super+Shift+4` | `Super+Shift+S` |
+| Lock | `Super+Ctrl+Q` | `Super+L` |
+
+[`mx-keys-s.sh`](mx-keys-s.sh) adds those combos to GNOME's screenshot and lock
+shortcuts, so the keys work in either mode. It also frees `Super+Shift+4` from the
+Ubuntu dock, which uses it to open a new window of the 4th dock app (`Super+4` still
+works). Run it as your normal user, **without** sudo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/espinosacodes/mx-master-3s-ubuntu/main/mx-keys-s.sh | bash
+```
+
+I tested this in Mac mode. The Windows mode mappings follow Logitech's defaults but
+I haven't tried them myself.
+
+To undo it, reset the three shortcuts:
+
+```bash
+gsettings reset org.gnome.shell.keybindings show-screenshot-ui
+gsettings reset org.gnome.settings-daemon.plugins.media-keys screensaver
+gsettings reset org.gnome.shell.extensions.dash-to-dock app-shift-hotkey-4
+```
+
 ## Troubleshooting
 
 **Check what logid sees:**
